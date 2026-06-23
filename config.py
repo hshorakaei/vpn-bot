@@ -19,18 +19,26 @@ def _require(key: str) -> str:
     return value
 
 
+def _int_list(key: str) -> list:
+    return [int(x.strip()) for x in os.getenv(key, "").split(",") if x.strip()]
+
+
 # --- تلگرام ---
 BOT_TOKEN = _require("BOT_TOKEN")
-ADMIN_IDS = [
-    int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
-]
+
+# super_admin ها از .env هستند و قابل حذف توسط ادمین‌های دیگر نیستند
+SUPER_ADMIN_IDS = _int_list("SUPER_ADMIN_IDS")
+
+# برای سازگاری با کدهای قدیمی — از دیتابیس بخوان در صورت نیاز
+ADMIN_IDS = SUPER_ADMIN_IDS
 
 # --- پنل 3X-UI ---
-# توجه: شناسه اینباند (inbound_id) ثابت نیست؛ هر پلن فروش، اینباند
-# مخصوص خودش را در دیتابیس (جدول plans) دارد و توسط ادمین تنظیم می‌شود.
 XUI_PANEL_URL = _require("XUI_PANEL_URL").rstrip("/")
 XUI_USERNAME = _require("XUI_USERNAME")
 XUI_PASSWORD = _require("XUI_PASSWORD")
+
+# آدرس سرور برای لینک‌سازی — هرگز مستقیم در کد ننویس
+SERVER_HOST = _require("SERVER_HOST")
 
 # --- دیتابیس ---
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/vpn_bot.db")
