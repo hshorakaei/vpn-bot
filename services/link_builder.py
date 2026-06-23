@@ -1,20 +1,21 @@
 """
 services/link_builder.py
 ساخت لینک اتصال vless:// برای هر اینباند بر اساس تنظیمات آن.
+آدرس سرور از config.SERVER_HOST خوانده می‌شود — هرگز مستقیم در کد ننویس.
 """
 
-from urllib.parse import urlencode, quote
+from urllib.parse import quote
 from services.xui_api import XUIClient
+import config
 
 
 def build_vless_reality_link(uuid: str, inbound: dict, remark: str) -> str:
-    """ساخت لینک vless برای اینباند از نوع Reality."""
     stream = inbound.get("streamSettings", {})
     reality = stream.get("realitySettings", {})
     reality_inner = reality.get("settings", {})
-    tcp_settings = stream.get("tcpSettings", {})
 
-    server = inbound.get("shareAddr") or "216.9.226.249"
+    # آدرس سرور همیشه از .env می‌آید — IP واقعی مخفی می‌ماند
+    server = config.SERVER_HOST
     port = inbound.get("port", 443)
     public_key = reality_inner.get("publicKey", "")
     fingerprint = reality_inner.get("fingerprint", "chrome")
@@ -41,7 +42,6 @@ def build_vless_reality_link(uuid: str, inbound: dict, remark: str) -> str:
 
 
 def get_connection_link(inbound_id: int, uuid: str, remark: str) -> str:
-    """دریافت تنظیمات اینباند از پنل و ساخت لینک اتصال."""
     client = XUIClient()
     inbound = client.get_inbound(inbound_id)
     protocol = inbound.get("protocol", "vless")
