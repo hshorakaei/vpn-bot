@@ -66,19 +66,19 @@ class XUIClient:
         return data.get("obj", [])
 
     def add_client(self, inbound_id: int, email: str,
-                   total_gb: float, expire_timestamp_ms: int) -> dict:
-        self._ensure_login()
-        payload = {
-            "client": {
-                "email": email,
-                "totalGB": int(total_gb * 1024 * 1024 * 1024),
-                "expiryTime": expire_timestamp_ms,
-                "tgId": 0,
-                "limitIp": 0,
-                "enable": True,
-            },
-            "inboundIds": [inbound_id],
-        }
+               total_gb: float, expire_timestamp_ms: int, limit_ip: int = 0) -> dict:
+    self._ensure_login()
+    payload = {
+        "client": {
+            "email": email,
+            "totalGB": int(total_gb * 1024 * 1024 * 1024),
+            "expiryTime": expire_timestamp_ms,
+            "tgId": 0,
+            "limitIp": limit_ip,
+            "enable": True,
+        },
+        "inboundIds": [inbound_id],
+    }
         resp = self.session.post(
             f"{self.base_url}/panel/api/clients/add",
             json=payload,
