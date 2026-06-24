@@ -12,13 +12,13 @@ import database
 # ─── پلن‌ها ────────────────────────────────────────────────
 
 def create_plan(title, duration_days, price,
-                plan_type="xui", inbound_id=None, volume_gb=None):
+                plan_type="xui", inbound_id=None, volume_gb=None, limit_ip=0):
     with database.db_cursor() as cur:
         cur.execute(
             """INSERT INTO plans
-               (title, plan_type, inbound_id, volume_gb, duration_days, price)
-               VALUES (?,?,?,?,?,?)""",
-            (title, plan_type, inbound_id, volume_gb, duration_days, price),
+               (title, plan_type, inbound_id, volume_gb, duration_days, price, limit_ip)
+               VALUES (?,?,?,?,?,?,?)""",
+            (title, plan_type, inbound_id, volume_gb, duration_days, price, limit_ip),
         )
         return cur.lastrowid
 
