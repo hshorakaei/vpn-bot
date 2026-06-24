@@ -15,7 +15,7 @@ from services.xui_api import XUIClient
 
 # ─── states ──────────────────────────────────────────────
 # افزودن پلن xui
-TITLE, INBOUND, VOLUME, DURATION, PRICE, CONFIRM = range(6)
+TITLE, INBOUND, VOLUME, DURATION, PRICE, LIMIT_IP, CONFIRM = range(7)
 # تنظیمات پرداخت
 SET_CARD, SET_PAYMENT_DESC = range(10, 12)
 # ویرایش پلن
@@ -146,7 +146,8 @@ async def admin_list_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = "✅" if p["is_active"] else "❌"
         ptype = "🔧" if p["plan_type"] == "xui" else "📝"
         vol = f"{int(p['volume_gb'])}GB | " if p.get("volume_gb") else ""
-        label = f"{status}{ptype} #{p['id']} {p['title']} | {vol}{p['duration_days']}روز | {p['price']:,}ت"
+        title_short = p['title'][:20] + "..." if len(p['title']) > 20 else p['title']
+        label = f"{status}{ptype} {title_short} | {vol}{p['duration_days']}روز | {p['price']:,}ت"
         buttons.append([InlineKeyboardButton(label, callback_data=f"admin_plan_{p['id']}")])
     buttons.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")])
 
@@ -261,18 +262,23 @@ async def admin_edit_plan_start(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
     context.user_data["editing_plan_id"] = plan_id
 
+    ptype = plan.get("plan_type", "xui")
+
     buttons = [
         [InlineKeyboardButton("📝 عنوان", callback_data="editfield_title")],
         [InlineKeyboardButton("⏱ مدت (روز)", callback_data="editfield_duration_days"),
          InlineKeyboardButton("💰 قیمت", callback_data="editfield_price")],
     ]
-    if plan.get("plan_type") == "xui":
-        buttons.append([InlineKeyboardButton("💾 حجم (GB)", callback_data="editfield_volume_gb"),
-                        InlineKeyboardButton("🔌 اینباند ID", callback_data="editfield_inbound_id")])
+    # فیلدهای XUI فقط برای پلن xui نشون داده میشه
+    if ptype == "xui":
+        buttons.append([
+            InlineKeyboardButton("💾 حجم (GB)", callback_data="editfield_volume_gb"),
+            InlineKeyboardButton("🔌 اینباند ID", callback_data="editfield_inbound_id")
+        ])
     buttons.append([InlineKeyboardButton("🔙 انصراف", callback_data=f"admin_plan_{plan_id}")])
 
     await query.edit_message_text(
-        f"✏️ ویرایش پلن #{plan_id}\nکدام فیلد را تغییر می‌دهید؟",
+        f"✏️ ویرایش پلن #{plan_id} ({ptype})\nکدام فیلد را تغییر می‌دهید؟",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
     return EDIT_FIELD
@@ -320,8 +326,14 @@ async def admin_edit_value_save(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def admin_edit_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    plan_id = context.user_data.get("editing_plan_id")
     context.user_data.clear()
-    await update.message.reply_text("لغو شد.")
+    await update.message.reply_text(
+        "لغو شد.",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 بازگشت به پلن", callback_data=f"admin_plan_{plan_id}" if plan_id else "admin_list_plans")
+        ]])
+    )
     return ConversationHandler.END
 
 
@@ -392,15 +404,39 @@ async def add_plan_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ عدد صحیح وارد کنید:")
         return PRICE
     context.user_data["new_plan"]["price"] = price
+    await update.message.reply_text(
+        "تعداد کاربر مجاز را وارد کنید:\n"
+        "عدد بزنید (مثلاً 1، 2، 3) یا برای بدون محدودیت عدد 0 بزنید:"
+    )
+    return LIMIT_IP
+
+
+async def add_plan_limit_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        limit = int(update.message.text.strip())
+        assert limit >= 0
+    except Exception:
+        await update.message.reply_text("❌ عدد صحیح وارد کنید (0 برای بدون محدودیت):")
+        return LIMIT_IP
+
+    context.user_data["new_plan"]["limit_ip"] = limit
+
     d = context.user_data["new_plan"]
+    limit_label = "بدون محدودیت" if limit == 0 else str(limit)
+    vol = d.get('volume_gb', 0)
+    dur = d.get('duration_days', 0)
+    title = f"{int(vol)}GB | {dur} روز | {limit_label} کاربر"
+    context.user_data["new_plan"]["title"] = title
+
     await update.message.reply_text(
         f"تایید اطلاعات پلن:\n\n"
-        f"عنوان: {d['title']}\n"
+        f"عنوان: {title}\n"
         f"اینباند ID: {d['inbound_id']}\n"
-        f"حجم: {d['volume_gb']} GB\n"
-        f"مدت: {d['duration_days']} روز\n"
-        f"قیمت: {price:,} تومان\n\n"
-        "برای تایید عدد 1 و برای لغو عدد 0 بفرستید."
+        f"حجم: {vol} GB\n"
+        f"مدت: {dur} روز\n"
+        f"تعداد کاربر: {limit_label}\n"
+        f"قیمت: {d['price']:,} تومان\n\n"
+        "برای تایید عدد 1 و برای لغو عدد 0 بزنید."
     )
     return CONFIRM
 
@@ -409,12 +445,13 @@ async def add_plan_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = context.user_data.get("new_plan", {})
     if update.message.text.strip() == "1":
         plan_id = plans_service.create_plan(
-            title=d["title"],
-            inbound_id=d.get("inbound_id"),
-            volume_gb=d.get("volume_gb"),
-            duration_days=d["duration_days"],
-            price=d["price"],
-            plan_type="xui",
+        title=d["title"],
+        inbound_id=d.get("inbound_id"),
+        volume_gb=d.get("volume_gb"),
+        duration_days=d["duration_days"],
+        price=d["price"],
+        plan_type="xui",
+        limit_ip=d.get("limit_ip", 0),
         )
         await update.message.reply_text(f"✅ پلن XUI #{plan_id} ساخته شد.")
     else:
@@ -886,7 +923,14 @@ async def admin_pending_orders(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.edit_message_text("\n".join(lines),
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="admin_back")]]))
 
-
+async def admin_edit_callback_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    plan_id = int(query.data.split("_")[2])
+    context.user_data.clear()
+    await _show_plan_detail(query, plan_id, update.effective_user.id)
+    return ConversationHandler.END
+    
 # ─── register handlers ────────────────────────────────────
 
 def get_admin_handlers():
@@ -899,6 +943,7 @@ def get_admin_handlers():
             DURATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plan_duration)],
             PRICE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plan_price)],
             CONFIRM:  [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plan_confirm)],
+            LIMIT_IP: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_plan_limit_ip)],
         },
         fallbacks=[CommandHandler("cancel", add_plan_cancel)],
     )
@@ -915,13 +960,19 @@ def get_admin_handlers():
     )
 
     edit_plan_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_edit_plan_start, pattern="^admin_edit_\\d+$")],
-        states={
-            EDIT_FIELD: [CallbackQueryHandler(admin_edit_field_select, pattern="^editfield_")],
-            EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_value_save)],
-        },
-        fallbacks=[CommandHandler("cancel", admin_edit_cancel)],
-    )
+    entry_points=[CallbackQueryHandler(admin_edit_plan_start, pattern="^admin_edit_\\d+$")],
+    states={
+        EDIT_FIELD: [
+            CallbackQueryHandler(admin_edit_field_select, pattern="^editfield_"),
+            CallbackQueryHandler(admin_edit_callback_cancel, pattern="^admin_plan_\\d+$"),
+        ],
+        EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_edit_value_save)],
+    },
+    fallbacks=[
+        CommandHandler("cancel", admin_edit_cancel),
+        CallbackQueryHandler(admin_edit_callback_cancel, pattern="^admin_plan_\\d+$"),
+    ],
+)
 
     payment_settings_conv = ConversationHandler(
         entry_points=[
